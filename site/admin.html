@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>당회보고서 종합</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="report.css">
+<style>
+  .wrap { max-width: 900px; }
+  .tabs { display: flex; gap: 6px; margin: 4px 0 16px; flex-wrap: wrap; }
+  .tabs button { background: var(--card); color: var(--muted); border: 1px solid var(--line); }
+  .tabs button.on { background: var(--accent); color: #fff; border-color: transparent; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tabs button.on { color: #10161d; } }
+  .toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+  .toolbar > div { flex: 1 1 220px; }
+  .entry { border-top: 1px solid var(--line); padding: 12px 0; }
+  .entry:first-of-type { border-top: 0; }
+  .entry-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .entry-head b { font-size: 16px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .edit { margin-top: 10px; }
+  .edit textarea { min-height: 110px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 640px) { .two { grid-template-columns: 1fr; } }
+  .teamrow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .teamrow .btns { display: flex; gap: 4px; }
+  .teamrow button { padding: 8px 10px; }
+  .print-root { padding: 0 16px 48px; }
+  .print-root.hidden { display: none; }
+  body.capturing .miss { display: none; }
+  body.capturing .page { box-shadow: none; }
+  .note { max-width: 900px; margin: 0 auto 14px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">훈련양육분과 총괄 · 관리자</div>
+    <h1>당회보고서 종합</h1>
+    <p>팀별 입력을 모아 A4 2쪽 당회보고서를 만듭니다.</p>
+  </header>
+
+  <div class="card" id="gate">
+    <label for="pw">관리자 비밀번호</label>
+    <input id="pw" type="password" autocomplete="off">
+    <button class="block" id="enter">들어가기</button>
+    <div class="msg" id="gateMsg"></div>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <div>
+          <label for="month">보고 월</label>
+          <select id="month"></select>
+        </div>
+        <button class="ghost" id="reload">새로고침</button>
+        <button class="ghost" id="print">인쇄</button>
+        <button id="pdf">PDF 다운로드</button>
+      </div>
+      <div class="info" id="info"></div>
+    </div>
+    <div class="tabs">
+      <button data-tab="preview" class="on">보고서 미리보기</button>
+      <button data-tab="entries">팀별 제출·편집</button>
+      <button data-tab="settings">팀·코드 설정</button>
+    </div>
+
+    <div class="card hidden" id="tab-entries"></div>
+
+    <div class="card hidden" id="tab-settings">
+      <h2>팀 목록</h2>
+      <p class="hint">보고서에 실리는 순서입니다. 담당자는 각 팀 입력란의 기본값으로 쓰입니다.</p>
+      <div id="teamRows"></div>
+      <button class="ghost small" id="addTeam">+ 팀 추가</button>
+      <div class="two" style="margin-top:14px">
+        <div><label for="adminPw">관리자 비밀번호</label><input id="adminPw"></div>
+      </div>
+      <button class="block" id="saveCfg">설정 저장</button>
+      <div class="msg" id="cfgMsg"></div>
+    </div>
+  </div>
+</div>
+
+<div class="print-root hidden" id="tab-preview">
+  <p class="note">미리보기 글자를 눌러 인쇄 전 <b>임시로</b> 고칠 수 있습니다(저장되지 않음). 계속 남길 수정은 「팀별 제출·편집」에서 해 주세요. 각 쪽은 내용 양에 맞춰 글자 크기가 자동으로 줄어듭니다.</p>
+  <div class="pages" id="pages"></div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let pw = sessionStorage.getItem("tr-admin") || "";
+let cfg = null;
+let entries = {};
+let tab = "preview";
+
+function msg(el, text, ok) {
+  el.textContent = text;
+  el.className = "msg show " + (ok ? "ok" : "err");
+}
+
+function fillMonths() {
+  const base = defaultMonth();
+  const opts = [];
+  for (let i = -6; i <= 1; i++) opts.push(addMonth(base, i));
+  $("month").innerHTML = opts.reverse().map((m) =>
+    `<option value="${m}" ${m === base ? "selected" : ""}>${monthLabel(m)} 보고 → ${md(firstSunday(m))} 당회</option>`).join("");
+}
+
+async function load() {
+  const d = await api("admin", { pw, month: $("month").value });
+  cfg = d.config;
+  entries = d.entries || {};
+  render();
+}
+
+function render() {
+  const m = $("month").value;
+  const done = cfg.teams.filter((t) => entries[t.id]).length;
+  const missing = cfg.teams.filter((t) => !entries[t.id]).map((t) => t.name);
+  $("info").innerHTML =
+    `<span class="pill">제출 ${done} / ${cfg.teams.length}팀</span>` +
+    `<span class="pill">입력 마감 ${md(lastFriday(m))}</span>` +
+    `<span class="pill">당회 ${md(firstSunday(m))}</span>` +
+    (missing.length ? `<span class="pill warn">미제출: ${esc(missing.join(", "))}</span>` : "");
+  renderReport();
+  renderEntries();
+  renderSettings();
+}
+
+/* ---------- 보고서 ---------- */
+const MARK = /^(\s*)(\d+[.)]|\(\d+\)|[-·•※○●▶]|[①-⑳])\s*/;
+function contentHtml(text) {
+  if (!text) return "";
+  return text.split("\n").map((line) => {
+    const m = line.match(MARK);
+    if (m) return `<div class="ln${m[1] ? " in" : ""}"><span class="mk">${esc(m[2])}</span><span class="tx">${esc(line.slice(m[0].length))}</span></div>`;
+    const ind = /^\s+/.test(line);
+    return `<div class="ln${ind ? " in" : ""}"><span class="tx">${esc(line.trim()) || "&nbsp;"}</span></div>`;
+  }).join("");
+}
+
+function tableHtml(field) {
+  const rows = cfg.teams.map((t, i) => {
+    const e = entries[t.id];
+    const mgr = e?.manager || t.manager;
+    const body = e ? contentHtml(e[field]) : `<span class="miss">미제출</span>`;
+    return `<tr>${i === 0 ? `<td class="bar" rowspan="${cfg.teams.length}"></td>` : ""}` +
+      `<td class="dept">${esc(t.name)}${mgr ? `<small>(${esc(mgr)})</small>` : ""}</td>` +
+      `<td class="content" contenteditable="true" spellcheck="false">${body}</td></tr>`;
+  }).join("");
+  return `<table class="rep"><colgroup><col style="width:2.6%"><col style="width:14.4%"><col></colgroup>` +
+    `<thead><tr><th colspan="2" class="diag"><span class="a">사역</span><span class="b">부서</span></th><th>사역내용</th></tr></thead>` +
+    `<tbody><tr><td colspan="2" class="division">훈련양육분과</td><td></td></tr>${rows}</tbody></table>`;
+}
+
+function renderReport() {
+  const m = $("month").value;
+  const next = addMonth(m, 1);
+  const s = firstSunday(m);
+  const dateLabel = `’${String(s.getFullYear()).slice(2)}. ${s.getMonth() + 1}. ${s.getDate()}. 당회자료`;
+  $("pages").innerHTML =
+    `<div class="page"><div class="docdate">${dateLabel}</div>` +
+    `<h1 class="doctitle">훈련양육분과 당회보고서</h1>` +
+    `<div class="sec"><span>1</span><span>${docMonth(m)} 사역보고</span></div>` +
+    `<div class="fit">${tableHtml("report")}</div><div class="pno">- 1 -</div></div>` +
+    `<div class="page"><div class="sec"><span>2</span><span>${docMonth(next)} 계획보고</span></div>` +
+    `<div class="fit">${tableHtml("plan")}</div><div class="pno">- 2 -</div></div>`;
+  fitAll();
+}
+
+// 각 쪽이 A4 한 장을 넘지 않도록 글자 크기를 실측해 자동 축소
+function fitAll() {
+  if (tab !== "preview") return;
+  document.querySelectorAll(".page .fit").forEach((fit) => {
+    const t = fit.querySelector("table");
+    let size = 10.5;
+    t.style.fontSize = size + "pt";
+    while (t.offsetHeight > fit.clientHeight && size > 6) {
+      size -= 0.25;
+      t.style.fontSize = size + "pt";
+    }
+  });
+}
+
+function scalePreview() {
+  const w = Math.min(document.documentElement.clientWidth - 32, 900);
+  const z = Math.min(1, w / 794);
+  $("pages").style.zoom = z;
+}
+document.addEventListener("input", (e) => { if (e.target.closest(".page")) fitAll(); });
+window.addEventListener("resize", scalePreview);
+
+/* ---------- 팀별 제출·편집 ---------- */
+function renderEntries() {
+  const m = $("month").value;
+  const nm = Number(addMonth(m, 1).split("-")[1]);
+  $("tab-entries").innerHTML = `<h2>${monthLabel(m)} 팀별 제출 내용</h2>` + cfg.teams.map((t) => {
+    const e = entries[t.id];
+    return `<div class="entry" data-team="${t.id}">
+      <div class="entry-head">
+        <div><b>${esc(t.name)}</b> <span class="meta">${esc(e?.manager || t.manager)}</span></div>
+        <div>${e ? `<span class="pill">✓ ${new Date(e.at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}${e.by ? " · " + esc(e.by) : ""}</span>` : `<span class="pill warn">미제출</span>`}
+        <button class="ghost small" data-act="toggle">편집</button></div>
+      </div>
+      <div class="edit hidden">
+        <label>담당자</label><input data-f="manager" value="${esc(e?.manager || t.manager)}">
+        <div class="two">
+          <div><label>${Number(m.split("-")[1])}월 사역보고</label><textarea data-f="report">${esc(e?.report || "")}</textarea></div>
+          <div><label>${nm}월 계획</label><textarea data-f="plan">${esc(e?.plan || "")}</textarea></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button data-act="save">저장</button>
+          ${e ? `<button class="ghost" data-act="delete">이 팀 제출 삭제</button>` : ""}
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+$("tab-entries").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button[data-act]");
+  if (!btn) return;
+  const box = btn.closest(".entry");
+  const team = box.dataset.team;
+  const act = btn.dataset.act;
+  if (act === "toggle") return box.querySelector(".edit").classList.toggle("hidden");
+  const val = (f) => box.querySelector(`[data-f="${f}"]`).value;
+  try {
+    btn.disabled = true;
+    if (act === "save") {
+      await api("admin", { pw, op: "saveEntry", month: $("month").value, team, manager: val("manager"), report: val("report"), plan: val("plan") });
+    } else if (act === "delete") {
+      if (!confirm("이 팀의 이번 달 제출 내용을 삭제할까요?")) return;
+      await api("admin", { pw, op: "deleteEntry", month: $("month").value, team });
+    }
+    await load();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ---------- 설정 ---------- */
+let draftTeams = null;
+function renderSettings() {
+  draftTeams = cfg.teams.map((t) => ({ ...t }));
+  $("adminPw").value = cfg.adminPw;
+  drawTeams();
+}
+function drawTeams() {
+  $("teamRows").innerHTML = draftTeams.map((t, i) => `
+    <div class="teamrow" data-i="${i}">
+      <input data-f="name" value="${esc(t.name)}" placeholder="팀(부서)명">
+      <input data-f="manager" value="${esc(t.manager)}" placeholder="담당자">
+      <div class="btns">
+        <button class="ghost" data-act="up" ${i === 0 ? "disabled" : ""} aria-label="위로">↑</button>
+        <button class="ghost" data-act="down" ${i === draftTeams.length - 1 ? "disabled" : ""} aria-label="아래로">↓</button>
+        <button class="ghost" data-act="del" aria-label="삭제">✕</button>
+      </div>
+    </div>`).join("");
+}
+$("teamRows").addEventListener("input", (ev) => {
+  const row = ev.target.closest(".teamrow");
+  draftTeams[row.dataset.i][ev.target.dataset.f] = ev.target.value;
+});
+$("teamRows").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-act]");
+  if (!b) return;
+  const i = Number(b.closest(".teamrow").dataset.i);
+  if (b.dataset.act === "up") [draftTeams[i - 1], draftTeams[i]] = [draftTeams[i], draftTeams[i - 1]];
+  if (b.dataset.act === "down") [draftTeams[i + 1], draftTeams[i]] = [draftTeams[i], draftTeams[i + 1]];
+  if (b.dataset.act === "del" && confirm(`「${draftTeams[i].name}」 팀을 목록에서 뺄까요? (이미 저장된 보고 내용은 지워지지 않습니다)`)) draftTeams.splice(i, 1);
+  drawTeams();
+});
+$("addTeam").addEventListener("click", () => {
+  draftTeams.push({ id: "", name: "", manager: "" });
+  drawTeams();
+  $("teamRows").lastElementChild.querySelector("input").focus();
+});
+$("saveCfg").addEventListener("click", async () => {
+  try {
+    const d = await api("admin", { pw, op: "saveConfig", teams: draftTeams, adminPw: $("adminPw").value });
+    pw = d.config.adminPw;
+    sessionStorage.setItem("tr-admin", pw);
+    await load();
+    msg($("cfgMsg"), "저장되었습니다.", true);
+  } catch (e) {
+    msg($("cfgMsg"), e.message);
+  }
+});
+
+/* ---------- 공통 ---------- */
+function setTab(name) {
+  tab = name;
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+  $("tab-entries").classList.toggle("hidden", name !== "entries");
+  $("tab-settings").classList.toggle("hidden", name !== "settings");
+  $("tab-preview").classList.toggle("hidden", name !== "preview");
+  if (name === "preview") { scalePreview(); fitAll(); }
+}
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+
+$("print").addEventListener("click", () => { setTab("preview"); setTimeout(() => window.print(), 50); });
+window.addEventListener("beforeprint", () => { $("tab-preview").classList.add("print-root"); $("pages").style.zoom = 1; fitAll(); });
+window.addEventListener("afterprint", () => { scalePreview(); fitAll(); });
+
+// PDF 파일 직접 생성(A4 2쪽) — html2canvas + jsPDF, 필요할 때만 불러옴
+function loadScript(src) {
+  return new Promise((ok, fail) => {
+    if (document.querySelector(`script[src="${src}"]`)) return ok();
+    const s = document.createElement("script");
+    s.src = src; s.onload = ok; s.onerror = () => fail(new Error("PDF 도구를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요."));
+    document.head.appendChild(s);
+  });
+}
+$("pdf").addEventListener("click", async () => {
+  const btn = $("pdf");
+  btn.disabled = true;
+  btn.textContent = "PDF 만드는 중…";
+  setTab("preview");
+  document.activeElement?.blur();
+  document.body.classList.add("capturing");
+  $("pages").style.zoom = 1;
+  try {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    await document.fonts?.ready;
+    fitAll();
+    const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+    const pages = [...document.querySelectorAll("#pages .page")];
+    for (let i = 0; i < pages.length; i++) {
+      const c = await html2canvas(pages[i], { scale: 3, backgroundColor: "#ffffff", useCORS: true });
+      if (i) doc.addPage();
+      doc.addImage(c.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
+    }
+    const s = firstSunday($("month").value);
+    doc.save(`${s.getFullYear()}-${pad2(s.getMonth() + 1)}-${pad2(s.getDate())} 훈련양육분과 당회보고서.pdf`);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    document.body.classList.remove("capturing");
+    scalePreview();
+    fitAll();
+    btn.disabled = false;
+    btn.textContent = "PDF 다운로드";
+  }
+});
+
+$("month").addEventListener("change", () => load().catch((e) => alert(e.message)));
+$("reload").addEventListener("click", () => load().catch((e) => alert(e.message)));
+
+async function enter() {
+  pw = $("pw").value || pw;
+  try {
+    fillMonths();
+    await load();
+    sessionStorage.setItem("tr-admin", pw);
+    $("gate").classList.add("hidden");
+    $("main").classList.remove("hidden");
+    setTab("preview");
+    document.fonts?.ready.then(fitAll);
+  } catch (e) {
+    sessionStorage.removeItem("tr-admin");
+    msg($("gateMsg"), e.message);
+  }
+}
+$("enter").addEventListener("click", enter);
+$("pw").addEventListener("keydown", (e) => e.key === "Enter" && enter());
+if (pw) enter();
+</script>
+</body>
+</html>

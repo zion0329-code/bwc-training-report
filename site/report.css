@@ -1,0 +1,83 @@
+/* 당회보고서 A4 서식 — 2026-9월 당회보고서 PDF 양식 재현 */
+.pages { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.page {
+  width: 210mm;
+  height: 297mm;
+  padding: 12mm 13mm 9mm;
+  background: #fff;
+  color: #111;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  font-family: "Nanum Gothic", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  word-break: keep-all;
+  overflow: hidden;
+}
+.docdate {
+  align-self: flex-start;
+  border: 1px solid #222;
+  box-shadow: 2px 2px 0 #222;
+  padding: 1.2mm 3mm;
+  font-weight: 800;
+  font-size: 10.5pt;
+  margin-bottom: 4mm;
+}
+.doctitle {
+  margin: 0 0 4mm;
+  text-align: center;
+  font-size: 22pt;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 1.5mm 0 1mm;
+  border-top: 1px solid #555;
+  border-bottom: 3px solid #111;
+  background: linear-gradient(to bottom, #f3f7fc, #d4e3f4);
+}
+.sec {
+  align-self: flex-start;
+  display: flex;
+  border: 1px solid #222;
+  box-shadow: 2px 2px 0 #222;
+  font-weight: 800;
+  font-size: 11.5pt;
+  margin-bottom: 4mm;
+  background: #fff;
+}
+.sec span { padding: 0.8mm 3mm; }
+.sec span:first-child { border-right: 1px solid #222; background: #f7ecef; padding: 0.8mm 2.5mm; }
+.sec span:last-child { padding-right: 9mm; }
+.fit { flex: 1; min-height: 0; overflow: hidden; }
+table.rep { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10.5pt; line-height: 1.5; }
+table.rep td, table.rep th { border: 1px solid #333; padding: 0.35em 0.6em; vertical-align: middle; }
+table.rep > thead th { background: #fdf3e1; font-weight: 800; height: 2.7em; }
+table.rep th.diag {
+  position: relative;
+  padding: 0;
+  background: #fdf3e1 linear-gradient(to top right, transparent calc(50% - 0.6px), #333 50%, transparent calc(50% + 0.6px));
+}
+th.diag .a { position: absolute; right: 0.6em; top: 0.25em; }
+th.diag .b { position: absolute; left: 0.3em; bottom: 0.15em; }
+td.division { background: #fbe6b8; font-weight: 800; text-align: center; height: 2.3em; }
+td.bar { background: #fbe6b8; padding: 0 !important; }
+td.dept { background: #fff6d6; font-weight: 800; text-align: center; overflow-wrap: anywhere; line-height: 1.35; font-size: 0.92em; letter-spacing: -0.3px; padding-left: 0.3em; padding-right: 0.3em; }
+td.dept small { display: block; font-size: 1em; font-weight: 800; }
+td.content { padding-top: 0.45em; padding-bottom: 0.45em; }
+td.content .ln { display: flex; min-height: 1.5em; }
+td.content .mk { flex: none; white-space: pre; padding-right: 0.3em; }
+td.content .tx { flex: 1; white-space: pre-wrap; }
+td.content .in { padding-left: 1.2em; }
+.miss { color: #c0392b; font-weight: 700; }
+.pno { text-align: center; font-size: 9pt; padding-top: 2.5mm; }
+.page [contenteditable]:focus { outline: 2px solid #2c5d8f; outline-offset: -2px; }
+
+@page { size: A4; margin: 0; }
+@media print {
+  html, body { background: #fff !important; }
+  body > *:not(.print-root) { display: none !important; }
+  .print-root, .print-root .pages { display: block !important; zoom: 1 !important; padding: 0 !important; }
+  .print-root > *:not(.pages) { display: none !important; }
+  .page { box-shadow: none; margin: 0; break-after: page; }
+  .page:last-child { break-after: auto; }
+  .miss { display: none; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>훈련양육분과 월례보고</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">분당우리교회 훈련양육분과</div>
+    <h1>월례 사역보고 입력</h1>
+    <p>매월 마지막 주 금요일까지 팀별로 <b>이번 달 사역보고</b>와 <b>다음 달 계획</b>을 입력해 주세요. 입력하신 내용은 다음 달 첫 주일 당회보고서에 그대로 실립니다.</p>
+  </header>
+
+  <div id="main">
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="month">보고 월</label>
+          <select id="month"></select>
+        </div>
+        <div>
+          <label for="team">팀(부서)</label>
+          <select id="team"></select>
+        </div>
+      </div>
+      <div class="info" id="info"></div>
+    </div>
+
+    <div class="card" id="form">
+      <label for="manager">담당자 <span class="hint">보고서에 (괄호)로 표기됩니다</span></label>
+      <input id="manager" maxlength="20">
+
+      <div class="labelrow">
+        <label for="report" id="reportLabel">이번 달 사역보고</label>
+        <button class="ghost small" id="loadPrev" type="button">지난달 계획 불러오기</button>
+      </div>
+      <textarea id="report" placeholder="1. 8/13 임원모임&#10;2. 8/16-30 훈련자 모집&#10;3. 8/25 전체 스텝 준비모임"></textarea>
+
+      <div class="labelrow"><label for="plan" id="planLabel">다음 달 계획</label></div>
+      <textarea id="plan" placeholder="1) 9/1 준비 기도회&#10;2) 9/8 하반기 개강예배 및 OT"></textarea>
+      <p class="hint">한 줄에 한 항목씩 적어 주세요. 번호(1. / 1) / -)로 시작하면 줄이 넘어갈 때 보고서에서 들여쓰기가 맞춰집니다.</p>
+
+      <button class="block" id="save">저장하기</button>
+      <div class="msg" id="saveMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>제출 현황 <span class="hint" id="countHint"></span></h2>
+      <div class="grid" id="status"></div>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let teams = [];
+let prevPlan = "";
+let dirty = false;
+
+function msg(el, text, ok) {
+  el.textContent = text;
+  el.className = "msg show " + (ok ? "ok" : "err");
+}
+
+function fillMonths() {
+  const base = defaultMonth();
+  const opts = [addMonth(base, -1), base, addMonth(base, 1)];
+  $("month").innerHTML = opts.map((m) => `<option value="${m}" ${m === base ? "selected" : ""}>${monthLabel(m)} 보고 (${Number(addMonth(m, 1).split("-")[1])}월 계획)</option>`).join("");
+}
+
+function updateLabels() {
+  const m = $("month").value;
+  const n = addMonth(m, 1);
+  $("reportLabel").textContent = `${Number(m.split("-")[1])}월 사역보고`;
+  $("planLabel").textContent = `${Number(n.split("-")[1])}월 계획`;
+  const dl = lastFriday(m);
+  const late = new Date() > new Date(dl.getFullYear(), dl.getMonth(), dl.getDate(), 23, 59);
+  $("info").innerHTML =
+    `<span class="pill ${late ? "warn" : ""}">입력 마감 ${md(dl)}${late ? " · 지났음" : ""}</span>` +
+    `<span class="pill">당회 ${md(firstSunday(m))}</span>`;
+}
+
+async function load(keepTeam) {
+  const team = $("team").value || store("tr-team") || "";
+  const d = await api("team", { month: $("month").value, team });
+  teams = d.teams;
+  $("team").innerHTML = `<option value="">— 팀을 선택하세요 —</option>` +
+    teams.map((t) => `<option value="${t.id}">${d.submitted[t.id] ? "✓ " : ""}${esc(t.name)}</option>`).join("");
+  $("team").value = teams.some((t) => t.id === team) ? team : "";
+  const done = teams.filter((t) => d.submitted[t.id]).length;
+  $("countHint").textContent = `${done} / ${teams.length}팀`;
+  $("status").innerHTML = teams.map((t) =>
+    `<div class="chip ${d.submitted[t.id] ? "done" : ""}"><span>${esc(t.name)}</span><span>${d.submitted[t.id] ? "✓" : "—"}</span></div>`).join("");
+
+  const t = teams.find((x) => x.id === $("team").value);
+  $("form").classList.toggle("hidden", !t);
+  if (!t || keepTeam) return;
+  const e = d.entry;
+  prevPlan = d.prevPlan;
+  $("manager").value = e?.manager || t.manager || "";
+  $("report").value = e?.report || "";
+  $("plan").value = e?.plan || "";
+  $("loadPrev").disabled = !prevPlan;
+  $("saveMsg").className = "msg";
+  if (e) msg($("saveMsg"), `이미 제출된 내용입니다 (${new Date(e.at).toLocaleString("ko-KR")}${e.by ? ", " + e.by : ""}). 고쳐서 다시 저장하실 수 있습니다.`, true);
+  dirty = false;
+}
+
+async function start() {
+  fillMonths();
+  updateLabels();
+  try {
+    await load();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function guard() {
+  return !dirty || confirm("저장하지 않은 내용이 있습니다. 이동할까요?");
+}
+let lastTeam = "", lastMonth = "";
+$("team").addEventListener("focus", () => (lastTeam = $("team").value));
+$("month").addEventListener("focus", () => (lastMonth = $("month").value));
+$("team").addEventListener("change", () => {
+  if (!guard()) return ($("team").value = lastTeam);
+  store("tr-team", $("team").value);
+  load().catch((e) => alert(e.message));
+});
+$("month").addEventListener("change", () => {
+  if (!guard()) return ($("month").value = lastMonth);
+  updateLabels();
+  load().catch((e) => alert(e.message));
+});
+["manager", "report", "plan"].forEach((id) => $(id).addEventListener("input", () => (dirty = true)));
+
+$("loadPrev").addEventListener("click", () => {
+  if ($("report").value.trim() && !confirm("지금 적힌 사역보고를 지난달 계획으로 바꿀까요?")) return;
+  $("report").value = prevPlan;
+  dirty = true;
+  $("report").focus();
+});
+
+$("save").addEventListener("click", async () => {
+  const btn = $("save");
+  btn.disabled = true;
+  btn.textContent = "저장 중…";
+  try {
+    await api("team", {
+      op: "save", month: $("month").value, team: $("team").value,
+      manager: $("manager").value, report: $("report").value, plan: $("plan").value, by: $("manager").value,
+    });
+    dirty = false;
+    await load(true);
+    msg($("saveMsg"), "저장되었습니다. 감사합니다! 수정이 필요하면 다시 저장하시면 됩니다.", true);
+  } catch (e) {
+    msg($("saveMsg"), e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "저장하기";
+  }
+});
+window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
+
+start();
+</script>
+</body>
+</html>
